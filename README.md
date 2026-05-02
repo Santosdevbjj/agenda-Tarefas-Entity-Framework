@@ -1,423 +1,217 @@
-## Construindo um Sistema de Agendamento de Tarefas com Entity Framework.
+# AgendaTarefas — Sistema de Agendamento com Entity Framework Core
 
 ![GFTNet001](https://github.com/user-attachments/assets/0c07fdcb-9e4c-457c-ab73-0ca31b495868)
 
+> **Bootcamp GFT Start #7 .NET** | .NET 8 · Entity Framework Core · SQLite · xUnit · Azure Pipelines
 
-**Bootcamp GFT Start #7 .NET**
-
----
-
-
-**AgendaTarefas — README (detalhado)**
-
-**Este README.md** explica cada arquivo gerado no projeto, sua funcionalidade, e dá um passo-a-passo didático para rodar localmente, executar migrations, rodar testes (unitários e de integração) e configurar CI/CD (Azure Pipelines com estágios Dev/Prod). Também inclui dicas de troubleshooting e referências oficiais.
-
-> **Nota rápida:** este projeto usa .NET 8, Entity Framework Core com SQLite, xUnit para testes e Azure Pipelines (YAML) para CI/CD.
-
-> Para testes de integração usamos WebApplicationFactory<TEntryPoint> (o Program do projeto deve ser partial para compatibilidade com o factory — veja seção Pronto para testes de integração).
-
-Documentação oficial importante citada ao longo do README: EF Migrations, EF SQLite provider, Azure Pipelines multistage e templates, AzureWebApp task, WebApplicationFactory e xUnit. 
-
-
-
+[![Portfólio Sérgio Santos](https://img.shields.io/badge/Portfólio-Sérgio_Santos-111827?style=for-the-badge&logo=githubpages&logoColor=00eaff)](https://portfoliosantossergio.vercel.app)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Sérgio_Santos-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/santossergioluiz)
 
 ---
 
-**Sumário rápido**
+## 1. Problema de Negócio
 
-**Arquivos principais:** AgendaTarefas.csproj, Program.cs, appsettings.json, AppDbContext.cs
+Equipes que gerenciam tarefas recorrentes sem um sistema centralizado enfrentam dois problemas críticos: **perda de rastreabilidade** (ninguém sabe o status real de cada item) e **ausência de auditoria** (não há histórico confiável para decisões gerenciais).
 
-**Migrations:** 20250829_InitialCreate.cs, AgendaTarefasModelSnapshot.cs
+Planilhas e e-mails resolvem o curto prazo, mas criam dívida operacional: dados inconsistentes, duplicidade de esforço e impossibilidade de escalar o processo conforme a equipe cresce.
 
-**Debug:** launchSettings.json
-
-**CI/CD:** azure-pipelines.yml, .template/variables-template.yml, .template/stage-template.yml
-
-**Testes:** TarefaServiceTests.cs (unit), TarefaControllerIntegrationTests.cs (integration)
-
-
+O desafio central deste projeto é demonstrar como uma API REST bem estruturada, com persistência gerenciada por ORM e pipeline de entrega automatizado, elimina esses problemas e cria uma base auditável e evolutiva.
 
 ---
 
-**O que cada arquivo faz (explicação detalhada)**
+## 2. Contexto
 
-> **Cada item abaixo descreve função e comportamento esperado do arquivo.**
+O projeto simula o backend de uma aplicação de gerenciamento de tarefas corporativas, com as seguintes características operacionais:
 
-
-
-**AgendaTarefas.csproj**
-
-Arquivo de projeto (.NET SDK).
-
-Define TargetFramework (net8.0), Nullable, ImplicitUsings e as dependências NuGet (EF Core provider para SQLite, EF Core Design, Swashbuckle/Swagger, etc.).
-
-Quando você rodar dotnet restore o NuGet instalará os pacotes citados aqui.
-
-
-**Program.cs**
-
-Ponto de entrada da aplicação (.NET 8 minimal hosting).
-
-Registra serviços no DI container:
-
-AddControllers() — habilita controllers.
-
-AddDbContext<AppDbContext>(options => options.UseSqlite(...)) — conecta EF Core à base SQLite via connection string do appsettings.json.
-
-AddSwaggerGen() / UseSwagger() / UseSwaggerUI() — habilita documentação Swagger (UI).
-
-Registra ITarefaRepository / ITarefaService (Scoped).
-
-
-Mapeia controllers com app.MapControllers() e roda a aplicação com app.Run().
-
-Importante para testes de integração: adicione public partial class Program { } (ver seção Pronto para testes de integração). A documentação sobre testes com WebApplicationFactory recomenda que o Program seja detectável como entrypoint. 
-
-
-**appsettings.json**
-
-Configurações da aplicação (em especial ConnectionStrings).
-
-No projeto adaptado para SQLite: "DefaultConnection": "Data Source=agendaTarefas.db".
-
-Em desenvolvimento você pode sobrepor com appsettings.Development.json (não comitar credenciais sensíveis).
-
-Quando rodar, o DB SQLite será criado no arquivo agendaTarefas.db na pasta do projeto (se ainda não existir).
-
-
-**Data/AppDbContext.cs**
-
-Classe AppDbContext : DbContext.
-
-Registra DbSet<Tarefa> que representa a tabela Tarefas.
-
-Em OnModelCreating define constraints (ex.: Titulo required, MaxLength) e a conversão do enum StatusTarefa para string no banco via EnumToStringConverter (legibilidade no BD).
-
-É a peça central usada pelo EF para criar queries, migrations e persistência.
-
-
-**Data/Migrations/20250829_InitialCreate.cs**
-
-Migration inicial (arquivo Migration gerado manualmente neste projeto).
-
-Up — cria a tabela Tarefas com colunas: Id (INTEGER autoincrement), Titulo, Descricao, Data, Status (string).
-
-Down — reverte a criação (drop table).
-
-Observação: em um fluxo típico você geraria essa migration localmente com dotnet ef migrations add InitialCreate (ou usaria o arquivo já incluído aqui). A funcionalidade Migrations do EF permite evoluir o schema do DB conforme o modelo muda. 
-
-
-**Data/Migrations/AgendaTarefasModelSnapshot.cs**
-
-Model snapshot (usado pelo EF para comparar modelo atual vs. último snapshot — base para gerar novas migrations).
-
-Representa a “imagem” do modelo naquele momento.
-
-Mantê-lo no repositório ajuda equipes a versionarem o histórico de schema.
-
-
-**Properties/launchSettings.json**
-
-Config de execução local (Visual Studio / dotnet run).
-
-Define URLs locais (https://localhost:5001;http://localhost:5000) e a variável ASPNETCORE_ENVIRONMENT (ex.: Development).
-
-É útil durante desenvolvimento para abrir automaticamente o browser com a URL correta.
-
-
-**azure-pipelines.yml (na raiz)**
-
-Pipeline multistage (CI + CD):
-
-Trigger: branches que disparam o pipeline (ex.: dev, main).
-
-Stage Build: compila, executa unit & integration tests, publica artefatos.
-
-Stage Dev/Prod: fazem deploy (via template .template/stage-template.yml) usando variable groups e environment (para aprovações manuais no Prod).
-
-Observação: um azure-pipelines.yml no root do repo é a prática padrão para Azure DevOps — o serviço procura lá por padrão. Multistage pipelines e templates são a forma recomendada de organizar CI/CD no Azure DevOps. 
-
-
-**.template/variables-template.yml**
-
-Template YAML com variáveis comuns (ex.: vmImage).
-
-Utilizado pelo pipeline principal para centralizar valores reutilizáveis (evita duplicação).
-
-
-**.template/stage-template.yml**
-
-Template que define um stage parametrizável (usado para Dev e Prod).
-
-Parâmetros:
-
-stageName (Dev/Prod)
-
-variableGroup (ex.: DevVariables, ProdVariables)
-
-azureSubscription (service connection)
-
-azureWebAppName (nome do App Service)
-
-
-Implementa um deployment job que baixa artefato e usa a task AzureWebApp@1 para deploy.
-
-Usa environment: <stageName> para associar o deployment a um Environment do Azure DevOps — isso permite configurar approvers/checks via UI. 
-
-
-**Tests/AgendaTarefas.Tests.Unit/TarefaServiceTests.cs**
-
-Unit tests (xUnit) cobrindo a camada TarefaService.
-
-Usa mocks (ex.: Moq) no repositório para isolar a lógica de negócio e validar comportamento (criação, update, validação de retorno).
-
-Executa via dotnet test <project> ou dotnet test --filter Category=Unit.
-
-
-**Tests/AgendaTarefas.Tests.Integration/TarefaControllerIntegrationTests.cs**
-
-Testes de integração (xUnit + WebApplicationFactory<Program>).
-
-Cria um TestServer em memória, executa requests HTTP reais contra os endpoints (POST /Tarefa, GET /Tarefa/{id}) e valida fluxo end-to-end.
-
-Requer que o Program seja detectável (ver Pronto para testes de integração). 
-
-
+- Tarefas possuem **título**, **descrição**, **data de vencimento** e **status** (`Pendente`, `EmAndamento`, `Concluída`)
+- O status é armazenado como **string legível** no banco (não como inteiro), facilitando auditorias diretas no BD
+- A arquitetura separa responsabilidades em **Controller → Service → Repository → DbContext**, padrão comum em sistemas críticos de médio/grande porte
+- O pipeline CI/CD cobre dois ambientes (**Dev** e **Prod**) com aprovação manual obrigatória antes do deploy em produção
 
 ---
 
-**Passo-a-passo para rodar localmente (didático, linha-a-linha)**
+## 3. Premissas da Análise
 
-**1) Pré-requisitos (instalar)**
+- O campo `Status` é a fonte oficial de verdade sobre o estado de cada tarefa
+- `Data` representa o prazo de execução da tarefa (armazenado como `TEXT` no SQLite, compatível com ISO 8601)
+- SQLite foi escolhido como banco de dados **intencionalmente para desenvolvimento e testes** — a arquitetura permite troca para SQL Server/Azure SQL sem alterações no código de negócio
+- Os testes de integração rodam contra um servidor in-memory (sem dependência de banco externo), garantindo isolamento e reprodutibilidade
+- O pipeline Azure Pipelines reflete um fluxo real de entrega em times que trabalham com branches `dev` e `main`
 
-1. .NET 8 SDK (verifique com dotnet --version — deve ser >= 8.0).
+---
 
+## 4. Estratégia da Solução
 
-**2. (Opcional) dotnet-ef CLI para manipular migrations:**
+### Stack e justificativa técnica
 
+| Tecnologia | Por que foi escolhida | Alternativa considerada |
+|---|---|---|
+| **.NET 8 + Minimal Hosting** | Maturidade, performance e suporte LTS | .NET 6 (fim de suporte próximo) |
+| **Entity Framework Core 8** | ORM com migrations versionadas e provider intercambiável | Dapper (sem migrations nativas) |
+| **SQLite** | Zero-config para dev/testes; mesma interface EF para trocar depois | SQL Server (overhead desnecessário em bootcamp) |
+| **xUnit + Moq** | Padrão da comunidade .NET; integração nativa com WebApplicationFactory | NUnit (menos adotado no ecossistema .NET moderno) |
+| **Azure Pipelines YAML** | Templates reutilizáveis com stages parametrizados; aprovação por Environment | GitHub Actions (avaliado, mas o contexto GFT/Azure é natural aqui) |
+
+### Arquitetura da solução
+
+```
+Request HTTP
+     │
+     ▼
+TarefaController         ← valida entrada, retorna HTTP status corretos
+     │
+     ▼
+TarefaService            ← regras de negócio isoladas (testáveis sem DB)
+     │
+     ▼
+ITarefaRepository        ← abstração que permite mock em testes unitários
+     │
+     ▼
+AppDbContext (EF Core)   ← mapeamento ORM + migrations versionadas
+     │
+     ▼
+agendaTarefas.db (SQLite)
+```
+
+### Pipeline CI/CD
+
+```
+push dev / main
+     │
+     ▼
+Stage Build: restore → build → unit tests → integration tests → publish artifact
+     │
+     ▼
+Stage Dev: deploy automático → App Service Dev
+     │
+     ▼
+Stage Prod: aguarda aprovação manual → deploy → App Service Prod
+```
+
+A decisão de usar **templates YAML reutilizáveis** (`stage-template.yml` + `variables-template.yml`) reflete a prática de times que operam múltiplos ambientes sem duplicar configuração — cada stage é parametrizado por `variableGroup`, `azureSubscription` e `azureWebAppName`.
+
+---
+
+## 5. Insights Técnicos
+
+**Separação de concerns como proteção ao teste:**  
+Ao isolar a lógica de negócio em `TarefaService`, foi possível escrever testes unitários com `Mock<ITarefaRepository>` sem nenhuma dependência de banco. O teste `CreateAsync_ShouldReturnDto_WithGeneratedId` valida o comportamento do service em milissegundos, independentemente de infraestrutura.
+
+**`EnumToStringConverter` como decisão de auditoria:**  
+Salvar `StatusTarefa` como string (`"Pendente"`, `"EmAndamento"`, `"Concluida"`) em vez de inteiro foi uma escolha deliberada. Em sistemas bancários e corporativos, queries diretas no banco por times de suporte e auditoria são comuns — legibilidade nativa elimina a necessidade de dicionários externos.
+
+**`public partial class Program` como contrato de teste:**  
+A instrução no final do `Program.cs` não é apenas um detalhe técnico — ela é o contrato que permite ao `WebApplicationFactory<Program>` construir o servidor de teste com a configuração real da aplicação, garantindo que os testes de integração validem o comportamento end-to-end real.
+
+**Separação de template YAML como governança de pipeline:**  
+O `stage-template.yml` parametrizável permite que novos ambientes (ex.: `Staging`, `QA`) sejam adicionados ao pipeline com 3 linhas de YAML, sem alterar a lógica central. Isso reflete maturidade em DevOps: configuração como código, não como procedimento manual.
+
+---
+
+## 6. Resultados
+
+Com a implementação deste projeto:
+
+- **Rastreabilidade garantida:** cada tarefa tem ciclo de vida auditável com status legível direto no banco
+- **Confiabilidade verificável:** testes unitários (camada de serviço) e de integração (fluxo HTTP end-to-end) cobrem os casos críticos de criação e consulta
+- **Entrega controlada:** pipeline multistage com aprovação manual em Prod impede deploys acidentais — o mesmo padrão adotado em times que trabalham com SLAs de disponibilidade
+- **Arquitetura evolutiva:** a troca de SQLite por SQL Server/Azure SQL exige apenas mudança de provider no `csproj` e `Program.cs`, sem tocar nas regras de negócio
+
+---
+
+## 7. Como Executar o Projeto
+
+### Pré-requisitos
+
+```bash
+# Verificar versão do .NET (requer >= 8.0)
+dotnet --version
+
+# Instalar EF CLI (caso não tenha)
 dotnet tool install --global dotnet-ef
+```
 
-ou, se já existe um dotnet-tools.json, dotnet tool restore. (EF CLI docs). 
+### Clonar e rodar
 
+```bash
+git clone https://github.com/Santosdevbjj/agenda-Tarefas-Entity-Framework
+cd agenda-Tarefas-Entity-Framework
 
-**3. Git (para clonar o repositório).**
-
-
-**4. (Opcional) SQLite browser/DB client se quiser inspecionar o arquivo .db.**
-
-
-
-
----
-
-**2) Clonar o repositório**
-
-git clone https://github.com/Santosdevbjj/agendaTarefasEntFram
-cd agendaTarefasEntFram
-
-
----
-
-**3) Restaurar e build**
-
+# Restaurar dependências e compilar
 dotnet restore
 dotnet build --configuration Release
 
+# Aplicar migrations e criar o banco SQLite
+dotnet ef database update
 
----
-
-**4) (Opcional) Gerar migrations localmente**
-
-Se você quiser gerar a migration em seu ambiente (recomendado em times, para timestamps locais), execute:
-
-dotnet ef migrations add InitialCreate
-
-> Caso você já tenha a migration **Data/Migrations/20250829_InitialCreate.cs** incluída, pode pular esse passo. A documentação de Migrations do EF explica as melhores práticas. 
-
-
-
-
----
-
-**5) Aplicar migrations (criar ou atualizar o DB)**
-
-Use a migration existente ou gerada para criar o banco SQLite:
-
-**dotnet ef database update**
-
-Isso criará (ou atualizará) o arquivo **agendaTarefas.db** usando o script Up() das migrations. Para produção, considere gerar scripts SQL revisáveis (opção no EF) antes de aplicar a DB em produção. 
-
-
----
-
-**6) Rodar a API localmente**
-
+# Rodar a API
 dotnet run --project AgendaTarefas.csproj
+```
 
-Ao iniciar, o console exibirá a URL (ex.: https://localhost:5001).
+Acesse a documentação Swagger em: **`https://localhost:5001/swagger/index.html`**
 
-Abra https://localhost:5001/swagger/index.html para acessar a documentação Swagger e testar os endpoints.
+### Rodar os testes
 
-
-
----
-
-**7) Testes Unitários e de Integração (local)**
-
-Unit tests
-
+```bash
+# Testes unitários
 dotnet test ./Tests/AgendaTarefas.Tests.Unit/AgendaTarefas.Tests.Unit.csproj --configuration Release
 
-Integration tests
-
+# Testes de integração
 dotnet test ./Tests/AgendaTarefas.Tests.Integration/AgendaTarefas.Tests.Integration.csproj --configuration Release
+```
 
-> **Observação:** Integration tests usam WebApplicationFactory<Program> e criarão um servidor in-memory. Certifique-se de que o Program seja partial (veja próximo ponto). 
-
-
-
-
----
-
-**8) Pronto para testes de integração — alteração necessária**
-
-Para o WebApplicationFactory<Program> encontrar o entrypoint, adicione no final do seu Program.cs:
-
-// Após app.Run();
-public partial class Program { }
-
-Isso permite que WebApplicationFactory<Program> crie a aplicação de teste usando o mesmo Program como entrypoint. (Padrão recomendado na documentaçao MS). 
-
+> **Atenção:** Para os testes de integração funcionarem, certifique-se de que o final do `Program.cs` contém:
+> ```csharp
+> public partial class Program { }
+> ```
 
 ---
 
-**CI/CD (Azure Pipelines) — como usar o template / configuração**
+## 8. Configurar CI/CD (Azure Pipelines)
 
-Onde colocar os arquivos
-
-Coloque azure-pipelines.yml na raiz do repositório (padrão do Azure DevOps).
-
-Mantenha .template/variables-template.yml e .template/stage-template.yml na pasta .template/ (ou ajuste o path se preferir). A documentação de templates mostra como reutilizar stages e parâmetros. 
-
-
-**O que configurar no Azure DevOps (passo-a-passo)**
-
-**1. Service connection (Project Settings → Service connections):** configure a conexão à sua assinatura Azure (usada pelo AzureWebApp@1 para fazer deploy).
-
-
-**2. Variable Groups (Pipelines → Library):** crie DevVariables e ProdVariables com variáveis sensíveis (ex.: DevWebApp, DevSubscription, DevConnectionString, ProdWebApp, ProdSubscription etc.). Marque “Allow access to all pipelines” se apropriado. 
-
-
-**3. Environments (Pipelines → Environments):** crie Dev e Prod (mesmos nomes usados no template). Em Prod adicione Approvals & checks (pessoas ou grupos aprovadores) para exigir aprovação manual antes de rodar o stage de produção. 
-
-
-**4. Commit do azure-pipelines.yml e observe o pipeline.**
-
-
-
-**Como o pipeline funciona (visão geral)**
-
-**Build:** compila, roda testes unitários e de integração, publica artefato (drop).
-
-**Dev stage:** baixa o artifact e faz deploy automático ao App Service do Dev.
-
-**Prod stage:** depende de Dev; rodará apenas se Build/Dev tiverem sucesso e (se habilitado) após aprovação manual (via Environment checks). O deploy é feito com a task AzureWebApp@1. 
-
-
+1. Faça commit do `azure-pipelines.yml` na raiz do repositório
+2. Em **Project Settings → Service connections**: configure a conexão à sua assinatura Azure
+3. Em **Pipelines → Library**: crie os Variable Groups `DevVariables` e `ProdVariables` com as variáveis `DevWebApp`, `DevSubscription`, `ProdWebApp`, `ProdSubscription`
+4. Em **Pipelines → Environments**: crie os environments `Dev` e `Prod`; no Prod adicione **Approvals & checks** com aprovadores obrigatórios
+5. Faça um push em `dev` ou `main` e observe o pipeline executar
 
 ---
 
-**Notas técnicas e troubleshooting (erros comuns)**
+## 9. Aprendizados
 
-**“dotnet ef migrations add” falha:** verifique se o projeto compila (dotnet build) e se Microsoft.EntityFrameworkCore.Design está instalado; se o DbContext está em outro projeto, use os parâmetros --project e --startup-project. (Docs EF CLI). 
+**O que foi mais desafiador:**  
+Configurar o `WebApplicationFactory<Program>` para testes de integração exigiu entender como o .NET 8 minimal hosting expõe o entrypoint. A instrução `public partial class Program { }` é simples, mas sua ausência gera erros de compilação silenciosos nos testes — aprendi a identificar esse padrão como checklist obrigatório em qualquer projeto ASP.NET Core com testes de integração.
 
-**SQLite e limitações:** SQLite tem limitações (algumas operações DDL não suportadas, tipos como DateTimeOffset podem ter problemas). Em caso de migrations complexas, EF pode precisar recriar tabelas; avalie esses impactos para produção. Use SQLite para desenvolvimento/testes; em produção, prefira SQL Server/Azure SQL se precisar de features avançadas. 
+**Principal aprendizado de design:**  
+Separar regras de negócio em `TarefaService` antes de escrever os testes, não depois. Quando o service está acoplado ao controller, o custo de testar explode. A sequência correta é: definir a interface do repositório → implementar o service → escrever os testes unitários → só então implementar o controller.
 
-**Deploy via AzureWebApp@1:** verifique o azureSubscription (service connection) tem as permissões corretas e que o appName existe. Logs do task mostram causas de falha. 
-
-**Aprovações não aparecendo:** confira se você criou o Environment com o mesmo nome usado no environment: do YAML e se adicionou Approvals and checks. 
-
-
-
----
-
-**Sugestões de boas práticas aplicáveis aqui**
-
-Versione as migrations no Git e coordene alterações entre a equipe (merge conflicts em migrations podem acontecer). 
-
-Para testes de integração estáveis, prefira usar um banco isolado (SQLite in-memory ou teste com DB por CI em containers). A documentação do ASP.NET sugere WebApplicationFactory<TEntryPoint>. 
-
-Proteja secrets com Variable Groups e Key Vault (se possível). 
-
-
+**O que faria diferente:**  
+Adicionaria um banco SQLite in-memory dedicado para os testes de integração desde o início, evitando que os testes dependam do arquivo `.db` local e garantindo paralelismo seguro entre test runs.
 
 ---
 
-**Referências (documentação oficial e leituras recomendadas)**
+## 10. Próximos Passos
 
-EF Core — Migrations (overview). 
-
-EF Core — Applying migrations / strategies. 
-
-EF Core — SQLite provider & limitations. 
-
-Azure DevOps — Create a multistage pipeline (Build/Test/Deploy). 
-
-Azure DevOps — YAML templates & parameters. 
-
-Azure Pipelines — AzureWebApp@1 task (deploy to App Service). 
-
-Azure DevOps — Variable Groups & Library. 
-
-Azure DevOps — Approvals & checks (Environments). 
-
-ASP.NET Core docs — Integration tests with WebApplicationFactory<TEntryPoint>. 
-
-xUnit official site (test runner and docs). 
-
-
+- [ ] Implementar paginação no endpoint `GET /Tarefa` para suportar grandes volumes
+- [ ] Adicionar autenticação JWT — o próximo passo natural para um sistema corporativo real
+- [ ] Substituir SQLite por Azure SQL nos ambientes Dev e Prod
+- [ ] Configurar cobertura de código no pipeline (publicar relatório de coverage como artefato)
+- [ ] Implementar cache com `IMemoryCache` para leituras frequentes de tarefas por status
 
 ---
 
-**Final — checklist prático (para rodar em ordem)**
+## Stack
 
-1. Instalar .NET 8 e dotnet-ef (se necessário).
-
-
-2. git clone ... → cd agendaTarefasEntFram.
-
-
-3. dotnet restore → dotnet build.
-
-
-4. (Opcional) dotnet ef migrations add InitialCreate — somente se quiser recriar timestamp.
-
-
-5. dotnet ef database update — aplica migrations e cria agendaTarefas.db.
-
-
-6. (adicionar public partial class Program { } em Program.cs) para integração.
-
-
-7. dotnet run --project AgendaTarefas.csproj → acessar https://localhost:5001/swagger/index.html.
-
-
-8. dotnet test para rodar Unit e Integration tests.
-
-
-9. Subir azure-pipelines.yml para a raiz; criar Service Connections / Variable Groups / Environments no Azure DevOps; observar pipeline.
-
-
-
+![.NET](https://img.shields.io/badge/.NET_8-512BD4?style=for-the-badge&logo=dotnet&logoColor=white)
+![C#](https://img.shields.io/badge/C%23-239120?style=for-the-badge&logo=csharp&logoColor=white)
+![Entity Framework](https://img.shields.io/badge/Entity_Framework_Core-512BD4?style=for-the-badge&logo=dotnet&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white)
+![xUnit](https://img.shields.io/badge/xUnit-5C2D91?style=for-the-badge&logo=dotnet&logoColor=white)
+![Azure Pipelines](https://img.shields.io/badge/Azure_Pipelines-0078D7?style=for-the-badge&logo=azuredevops&logoColor=white)
 
 ---
 
-**Contato:**
+## Contato
 
-[![Portfólio Sérgio Santos](https://img.shields.io/badge/Portfólio-Sérgio_Santos-111827?style=for-the-badge&logo=githubpages&logoColor=00eaff)](https://santosdevbjj.github.io/portfolio/)
-[![LinkedIn Sérgio Santos](https://img.shields.io/badge/LinkedIn-Sérgio_Santos-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/santossergioluiz) 
-
----
-
-
-
+[![Portfólio Sérgio Santos](https://img.shields.io/badge/Portfólio-Sérgio_Santos-111827?style=for-the-badge&logo=githubpages&logoColor=00eaff)](https://portfoliosantossergio.vercel.app)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Sérgio_Santos-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/santossergioluiz)
